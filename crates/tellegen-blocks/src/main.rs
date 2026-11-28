@@ -13,7 +13,8 @@
 //! `blocks.html`), `--json <file.json>`, `--source-url <prefix>` (links each
 //! file to `<prefix><path>`), `--from <note>` (a revision or date shown in the
 //! footer), `--check` (exit 1 when there are issues), `--preset rms` (the
-//! RMS engine and the app's dynamics code of this repository, from `--base`)
+//! RMS engine, its browser entry points and the app's dynamics code of this
+//! repository, from `--base`)
 //! or `--preset protection` (the relay engine).
 //!
 //! @block Command line

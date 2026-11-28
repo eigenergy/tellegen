@@ -1,6 +1,7 @@
 /** The RMS worker's side of the experimental editing tools and the live
  * session (rms-tools.ts): the wasm exports of `rms_tools.rs`, which exist
- * only in a build with `rms-experimental`. */
+ * only in a build with `rms-experimental`.
+ * @block Tools in the RMS worker */
 
 import type { RmsLiveSliceValue, RmsToolOp } from "./rms-protocol.js";
 

@@ -2,7 +2,8 @@
  * SIMD and threads. The RMS worker (rms-worker.ts) starts it with its
  * compiled module, its shared memory and the thread's task; the thread
  * instantiates the module on that memory, says it is ready and runs the
- * task (a pool's worker loop), which does not return. */
+ * task (a pool's worker loop), which does not return.
+ * @block Engine thread */
 
 /** The parts of the threaded engine build (`wasm-pkg-mt`) a thread calls.
  * That build is optional and made apart from `npm run wasm`, so it is loaded

@@ -70,22 +70,46 @@ pub fn generate(
 }
 
 /// The roots and headings of this repository's RMS dynamics diagram: the
-/// engine (`crates/tellegen/src/rms`) and the app's dynamics code
-/// (`packages/svelte/src/lib/dynamics`, `…/components/dynamics`), each
-/// included when it is there.
+/// engine (`crates/tellegen/src/rms`), its browser entry points (the RMS and
+/// protection files of `crates/tellegen-wasm/src` and `packages/engine/src`)
+/// and the app's dynamics code (`packages/svelte/src/lib/dynamics`,
+/// `…/components/dynamics`), each included when it is there.
 #[must_use]
 pub fn rms_preset(workspace: &Path) -> (Vec<Root>, Vec<Heading>) {
-    let candidates = [
-        ("crates/tellegen/src/rms", "rms"),
-        ("packages/svelte/src/lib/dynamics", "app::logic"),
-        ("packages/svelte/src/lib/components/dynamics", "app::ui"),
-        ("packages/svelte/src/lib/charts", "app::charts"),
+    let candidates: [(&str, &str, &[&str]); 6] = [
+        ("crates/tellegen/src/rms", "rms", &[]),
+        (
+            "crates/tellegen-wasm/src",
+            "browser::wasm",
+            &["rms.rs", "rms/threads.rs", "rms_tools.rs", "protection.rs"],
+        ),
+        (
+            "packages/engine/src",
+            "browser::engine",
+            &[
+                "rms.ts",
+                "rms-protocol.ts",
+                "rms-worker.ts",
+                "rms-thread.ts",
+                "rms-tools.ts",
+                "rms-tools-worker.ts",
+                "protection.ts",
+            ],
+        ),
+        ("packages/svelte/src/lib/dynamics", "app::logic", &[]),
+        (
+            "packages/svelte/src/lib/components/dynamics",
+            "app::ui",
+            &[],
+        ),
+        ("packages/svelte/src/lib/charts", "app::charts", &[]),
     ];
     let roots = candidates
         .iter()
-        .map(|(dir, module)| Root {
+        .map(|(dir, module, only)| Root {
             dir: workspace.join(dir),
             module: (*module).to_owned(),
+            only: only.iter().map(|f| (*f).to_owned()).collect(),
         })
         .filter(|r| r.dir.is_dir())
         .collect();
@@ -95,6 +119,25 @@ pub fn rms_preset(workspace: &Path) -> (Vec<Root>, Vec<Heading>) {
         doc: doc.to_owned(),
     };
     let headings = vec![
+        heading(
+            "browser",
+            "RMS in the browser",
+            "The browser entry points of the RMS engine: the WebAssembly adapter that exports it \
+             (`crates/tellegen-wasm`) and the `@tellegen/engine` workers and classes that call it \
+             (`packages/engine`).",
+        ),
+        heading(
+            "browser::wasm",
+            "WebAssembly adapter",
+            "`crates/tellegen-wasm/src`: the RMS case, the live session, the model tools, the \
+             protection calls and the threads of the threaded build, exported to JavaScript.",
+        ),
+        heading(
+            "browser::engine",
+            "Engine package",
+            "`packages/engine/src`: the RMS worker and its protocol, the threads of the threaded \
+             build, the model tools and the protection calls, as the app uses them.",
+        ),
         heading(
             "app",
             "Dynamics in the app",
@@ -128,8 +171,9 @@ pub fn rms_preset(workspace: &Path) -> (Vec<Root>, Vec<Heading>) {
 /// The intro of the RMS dynamics diagram's top level.
 pub const RMS_INTRO: &str = "RMS (phasor-domain) dynamic simulation in tellegen, from the \
     engine to the app. **RMS dynamic simulation** is the Rust engine: building the system from a \
-    case, the device models, the solver, runs and their analysis. **Dynamics in the app** is the \
-    browser side that drives it and shows the results. Every block is drawn from `@block` tags in \
+    case, the device models, the solver, runs and their analysis. **RMS in the browser** is the \
+    WebAssembly adapter and the engine package's workers that call it. **Dynamics in the app** is \
+    the browser side that drives it and shows the results. Every block is drawn from `@block` tags in \
     the code and its own documentation; arrows are what the code uses.";
 
 /// The roots of this repository's protection diagram: the relay engine
@@ -141,6 +185,7 @@ pub fn protection_preset(workspace: &Path) -> (Vec<Root>, Vec<Heading>) {
     let root = Root {
         dir: workspace.join("crates/tellegen/src/protection"),
         module: "protection".to_owned(),
+        only: Vec::new(),
     };
     (
         std::iter::once(root).filter(|r| r.dir.is_dir()).collect(),

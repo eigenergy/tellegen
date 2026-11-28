@@ -7,6 +7,8 @@
 //! the stored PowerIO module and its dynamic data, prepared as the app prepares its RMS case
 //! (`case_json`: `load_model` and the RMS options; empty: constant-impedance
 //! loads and the defaults).
+//!
+//! @block Protection entry points
 
 use wasm_bindgen::prelude::*;
 

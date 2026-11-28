@@ -7,7 +7,8 @@
  *
  * Numbers are the engine's: every recorded channel is the Rust run's sample
  * for sample, and the screening (verdict, COI frequency, bus frequencies) is
- * computed in Rust from the run's own samples, never from a decimated copy. */
+ * computed in Rust from the run's own samples, never from a decimated copy.
+ * @block RMS runs in the browser */
 
 import { parseApiResult } from "./result-validation.js";
 import { errorText } from "./errors.js";

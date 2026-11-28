@@ -7,7 +7,8 @@
  * The setting calls run on the engine worker; the test suite runs on an
  * isolated worker of its own, so it never holds up the RMS worker or the
  * interactive studies, and aborting it terminates only that worker. The
- * calls need an engine build with `protection` ({@link protectionSupported}). */
+ * calls need an engine build with `protection` ({@link protectionSupported}).
+ * @block Protection calls */
 import { engineHost, isolatedEngineHost } from "./host.js";
 import type { EngineValue } from "./protocol.js";
 import { assertEngineInputLength } from "./input-limit.js";

@@ -2,7 +2,8 @@
  * module the engine worker loads) and the prepared RmsCase handles. The
  * host terminates it to stop a run; the static-study worker is untouched.
  * A trap (a Rust panic or a failed allocation) leaves the instance
- * undefined, so the worker answers and closes itself, as worker.ts does. */
+ * undefined, so the worker answers and closes itself, as worker.ts does.
+ * @block RMS worker */
 
 import { errorText } from "./errors.js";
 import type {

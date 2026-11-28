@@ -2,7 +2,8 @@
  * parameters and their edits, the models of a unit, controller block graphs,
  * and a live session that advances on demand and takes events at its current
  * time. They run in the RMS worker (rms-worker.ts) and need an engine build
- * with `rms-experimental`; the numbers are the engine's. */
+ * with `rms-experimental`; the numbers are the engine's.
+ * @block RMS tools and live session */
 
 import { assertEngineInputLength } from "./input-limit.js";
 import type { RmsLiveSliceValue, RmsToolOp } from "./rms-protocol.js";

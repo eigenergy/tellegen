@@ -67,7 +67,8 @@ rms-test:
     cargo clippy -p tellegen --all-targets --features rms-experimental -- -D warnings
     cargo clippy -p tellegen --all-targets --features rms-experimental,protection -- -D warnings
 
-# Draw the RMS dynamics block diagram (the engine and the app's dynamics code)
+# Draw the RMS dynamics block diagram (the engine, its browser entry points and
+# the app's dynamics code)
 # from the @block annotations in the code
 # (target/blocks/rms.html); `just blocks --check` fails on annotation issues.
 blocks *flags="":

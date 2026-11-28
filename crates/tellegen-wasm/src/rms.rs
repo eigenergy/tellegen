@@ -7,6 +7,8 @@
 //! (COI, bus frequencies), packs the channels channel-major and drops the
 //! bus angles once the bus frequencies are derived from them. The packing is
 //! plain Rust ([`run_buffers`]) so a native test checks it.
+//!
+//! @block Prepared RMS case
 
 use std::collections::BTreeMap;
 

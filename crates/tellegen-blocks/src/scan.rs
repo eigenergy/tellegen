@@ -118,6 +118,9 @@ pub struct SourceFile {
 pub struct Root {
     pub dir: PathBuf,
     pub module: String,
+    /// The files to scan, as paths relative to `dir` (`rms/threads.rs`);
+    /// empty: every file under it.
+    pub only: Vec<String>,
 }
 
 /// A group of modules without a file of its own (a folder of TypeScript, or
@@ -164,6 +167,7 @@ pub fn scan(dir: &Path, module: &str, base: &Path, title: &str) -> std::io::Resu
     let root = Root {
         dir: dir.to_owned(),
         module: module.to_owned(),
+        only: Vec::new(),
     };
     scan_roots(&[root], &[], base, title)
 }
@@ -184,8 +188,14 @@ pub fn scan_roots(
         let mut paths = Vec::new();
         collect(&root.dir, &mut paths)?;
         for path in paths {
-            let text = std::fs::read_to_string(&path)?;
             let rel = path.strip_prefix(&root.dir).unwrap_or(&path);
+            if !root.only.is_empty() {
+                let shown = rel.to_string_lossy().replace('\\', "/");
+                if !root.only.contains(&shown) {
+                    continue;
+                }
+            }
+            let text = std::fs::read_to_string(&path)?;
             let mut segs: Vec<String> = root.module.split("::").map(str::to_owned).collect();
             let comps: Vec<String> = rel
                 .components()

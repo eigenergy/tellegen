@@ -109,7 +109,9 @@ cargo run -p tellegen-blocks -- crates/tellegen/src/rms \
     [--json target/blocks/rms.json] [--source-url <prefix>] [--check]
 ```
 
-`--preset rms` draws the engine and the app's dynamics code together,
+`--preset rms` draws the engine, its browser entry points (the RMS and
+protection files of the WebAssembly adapter and `@tellegen/engine`) and the
+app's dynamics code together,
 `--preset protection` the relay engine;
 `--source-url` links each block to its lines (for example
 `https://github.com/<org>/<repo>/blob/<rev>/`); `--check` exits with an error

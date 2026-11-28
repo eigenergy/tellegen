@@ -18,7 +18,8 @@ fn rms_blocks_are_complete() {
         issues.join("\n")
     );
     assert!(doc.files.len() >= 15, "found {} files", doc.files.len());
-    // The engine, and the app when its sources are there, at the top.
+    // The engine, and its browser entry points and the app when their
+    // sources are there, at the top.
     let roots: Vec<&str> = doc
         .roots()
         .into_iter()
@@ -26,7 +27,7 @@ fn rms_blocks_are_complete() {
         .collect();
     assert!(roots.contains(&"rms"), "{roots:?}");
     assert!(
-        roots.iter().all(|r| ["rms", "app"].contains(r)),
+        roots.iter().all(|r| ["rms", "browser", "app"].contains(r)),
         "{roots:?}"
     );
     // The diagram has something to draw.

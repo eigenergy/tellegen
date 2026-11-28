@@ -3,6 +3,8 @@
 //! `globalThis.__tellegenSpawnRmsThread(ptr)`, which starts a Web Worker on
 //! the same module and memory that calls [`rms_thread_entry`] with `ptr`;
 //! [`rms_threads_init`] starts the engine's pools through it.
+//!
+//! @block Threads in WebAssembly
 
 use wasm_bindgen::prelude::*;
 

@@ -5,6 +5,8 @@
 //!
 //! The numbers are the engine's (`tellegen::rms`); this layer moves text and
 //! flat buffers.
+//!
+//! @block Editing tools and live case
 
 use serde::Serialize;
 use tellegen::rms::{RecordSpec, RmsEvent, RmsLive};

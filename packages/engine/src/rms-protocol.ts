@@ -1,7 +1,8 @@
 /** Messages between the page and the dedicated RMS worker (rms-worker.ts).
  * The worker owns its own wasm instance and the prepared `RmsCase` handles,
  * so a run never blocks the page or the static-study worker, and Stop can
- * terminate it outright. */
+ * terminate it outright.
+ * @block RMS worker messages */
 
 export type RmsWorkerOp =
   | { op: "support" }
