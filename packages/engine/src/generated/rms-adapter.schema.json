@@ -1441,14 +1441,5 @@
     "library"
   ],
   "title": "OutputSchema",
-  "type": "object",
-  "x-rust-source-files": {
-    "crates/tellegen-wasm/examples/rms_adapter_schema.rs": "fb784b0fee577a0526b0dc7ffb4975ac22edd1f3e4a78d03265eab942395d8f3",
-    "crates/tellegen-wasm/src/rms.rs": "e1c9beaaf6a6dbcbdd76604e233fd1a7f2df27b2d540b7c56153b3de8fb8f428",
-    "crates/tellegen/src/rms/api.rs": "b601bc03417092f26c3f200d3e762c14ea9e82338fcd816c0a21f1243f16a7ef",
-    "crates/tellegen/src/rms/library.rs": "bf8116f875d8ff97a186d6f05973f89988a82b709d6eae56fe1f66576514c157",
-    "crates/tellegen/src/rms/linear.rs": "b7377adc972d720d0bbfdb0c60401fc2fe420920fb8c49210e0dc968554a8527",
-    "crates/tellegen/src/rms/mod.rs": "3039b7de5120844ea5aa715de447cc55cfd6d44d49f240993a0f8238f23805e4",
-    "crates/tellegen/src/rms/screen.rs": "18724a66463cc83e5fce6ce2e971e921b155c615a3ee6961cfea43ca80b8ef01"
-  }
+  "type": "object"
 }
