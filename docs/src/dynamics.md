@@ -314,6 +314,27 @@ its current time; it reproduces a batch run of its event log. It takes the
 same watch set (`set_record`) and gives any channel at its current time
 (`snapshot`).
 
+In the Live tab, select a disturbance in the Dynamics panel and follow its
+recorded channels in the plot dock. Select a unit on the map to open its
+models in that same panel. Live bus and rotor angles (`va:`, `delta:`) use the
+simulation reference. Beside them, the live session derives at every sample
+what the screening of a completed run derives, with the same code: the
+system frequency at the centre of inertia of the largest island (`coi:f`),
+each bus's frequency from its angle in the moving reference frame (`f:`),
+each machine's angle from the COI of its own island (`dcoi:`) and the largest
+rotor-angle separation within an island (`coi:sep`); machines in different
+islands are never compared. A batch run of the same events gives the same
+numbers from the same samples (`crates/tellegen/tests/rms_live_derived.rs`).
+
+The chart accepts sampled coordinates and an axis unit. A future EMT solver
+can use it to plot instantaneous phase currents in amperes or phase-to-ground
+voltages in volts at its own output times. The EMT solver would supply its
+own network and device equations. A first check is an initially unenergized
+series RL circuit switched onto a DC source at time $t_s$. Compare the
+computed current with $i(t)=(V/R)(1-\exp[-R(t-t_s)/L])$ for $t\geq t_s$,
+including a switch time between output samples. The RMS live view's 20 ms
+recording interval is specific to that view.
+
 <a id="rms-screening"></a>
 
 ### Screening

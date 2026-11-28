@@ -1,4 +1,6 @@
 <script lang="ts">
+	/** The key to the map's dynamics colours: bus voltage and generator speed.
+	 * @block Dynamics map legend */
 	import { dynVoltageGradient, haloLegendRadius } from '../../dynamics/legend.js';
 
 	/** The key to the map's dynamics colours, in the Network panel where the steady-state key

@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --muted: #5d6676; --faint: #8a93a3;
+  --line: #d9dde4; --node: #ffffff; --node-ink: #1d2330; --accent: #2f6fde; --accent-soft: #e6eefc;
+  --section: #0f8a6a; --section-soft: #e3f4ee; --item: #7a4fd0; --item-soft: #efe8fb;
+  --module: #2f6fde; --module-soft: #e6eefc; --ctx: #f1f2f5; --edge: #7f8aa0; --hot: #e2662b;
+  --code-bg: #f3f4f7; --kw: #8a3ab9; --str: #a35a00; --com: #6b7a68; --warn: #c0392b;
+  --shadow: 0 1px 2px rgba(20,30,50,.08), 0 2px 8px rgba(20,30,50,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171d; --panel: #1b1f27; --ink: #e5e8ee; --muted: #a2aab8; --faint: #747d8c;
+    --line: #2d333f; --node: #222733; --node-ink: #e5e8ee; --accent: #6ea0ff; --accent-soft: #1f2c46;
+    --section: #3cc79f; --section-soft: #17332b; --item: #b192f2; --item-soft: #2a2340;
+    --module: #6ea0ff; --module-soft: #1f2c46; --ctx: #1d212a; --edge: #7d879a; --hot: #ff8a4f;
+    --code-bg: #161a21; --kw: #d39cf5; --str: #e7b267; --com: #8a9a86; --warn: #ff6b5b;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 2px 10px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171d; --panel: #1b1f27; --ink: #e5e8ee; --muted: #a2aab8; --faint: #747d8c;
+  --line: #2d333f; --node: #222733; --node-ink: #e5e8ee; --accent: #6ea0ff; --accent-soft: #1f2c46;
+  --section: #3cc79f; --section-soft: #17332b; --item: #b192f2; --item-soft: #2a2340;
+  --module: #6ea0ff; --module-soft: #1f2c46; --ctx: #1d212a; --edge: #7d879a; --hot: #ff8a4f;
+  --code-bg: #161a21; --kw: #d39cf5; --str: #e7b267; --com: #8a9a86; --warn: #ff6b5b;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 2px 10px rgba(0,0,0,.3);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
+code, pre, .mono { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
+header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+header h1 { font-size: 15px; margin: 0; font-weight: 650; white-space: nowrap; }
+.crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; flex: 1; }
+.crumbs button { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 2px 4px; border-radius: 4px; font: inherit; }
+.crumbs button:hover { background: var(--accent-soft); }
+.crumbs button.here { color: var(--ink); font-weight: 600; cursor: default; background: none; }
+.crumbs .sep { color: var(--faint); }
+.search { position: relative; }
+.search input { width: 260px; max-width: 60vw; padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+.results { position: absolute; right: 0; top: 36px; width: 420px; max-width: 90vw; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); z-index: 30; max-height: 60vh; overflow: auto; display: none; }
+.results.open { display: block; }
+.results button { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--ink); padding: 8px 12px; cursor: pointer; font: inherit; border-bottom: 1px solid var(--line); }
+.results button:hover, .results button.active { background: var(--accent-soft); }
+.results small { display: block; color: var(--muted); }
+.badge { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; border: 0; font-family: inherit; }
+.badge.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); cursor: pointer; }
+main { flex: 1; display: flex; min-height: 0; }
+#stage { flex: 1; overflow: auto; position: relative; min-width: 0; }
+#canvas { position: relative; margin: 0 auto; transition: opacity .15s; }
+#canvas.fading { opacity: 0; }
+#edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+#edges path.e { fill: none; stroke: var(--edge); stroke-opacity: .55; pointer-events: stroke; cursor: help; }
+#edges path.e.seq { stroke: var(--faint); stroke-opacity: .9; stroke-width: 2; stroke-dasharray: none; }
+#edges path.e.ctx { stroke-dasharray: 4 4; }
+#edges path.e.hot { stroke: var(--hot); stroke-opacity: 1; }
+#edges path.e.dim { stroke-opacity: .12; }
+#edges path.hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: help; }
+.node { position: absolute; background: var(--node); color: var(--node-ink); border: 1px solid var(--line); border-left: 4px solid var(--module); border-radius: 8px; padding: 8px 10px 6px; box-shadow: var(--shadow); cursor: pointer; display: flex; flex-direction: column; gap: 2px; transition: transform .12s, box-shadow .12s, opacity .12s; overflow: hidden; }
+.node:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(20,30,50,.12), 0 6px 18px rgba(20,30,50,.12); }
+.node.item { border-left-color: var(--item); }
+.node.section { border-left-color: var(--section); }
+.node.selected { outline: 2px solid var(--accent); outline-offset: 1px; }
+.node.dim { opacity: .35; }
+.node .t { font-weight: 640; font-size: 13.5px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.node .s { color: var(--muted); font-size: 12px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-height: 2.7em; }
+.node .f { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--faint); margin-top: auto; }
+.node .f .open { margin-left: auto; color: var(--accent); font-weight: 600; }
+.node .step { position: absolute; right: 8px; top: 6px; font-size: 11px; color: var(--faint); font-weight: 600; }
+.node.ctx { background: var(--ctx); border-style: dashed; border-left-style: solid; box-shadow: none; opacity: .92; }
+.node.ctx .t { font-weight: 560; font-size: 12.5px; }
+.band { position: absolute; left: 0; right: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); padding-left: 16px; }
+.empty { padding: 48px; color: var(--muted); max-width: 640px; margin: 0 auto; }
+#tip { position: fixed; z-index: 40; max-width: 380px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); padding: 10px 12px; font-size: 13px; pointer-events: none; display: none; }
+#tip .hint { color: var(--accent); font-size: 12px; margin-top: 6px; }
+#tip .names { color: var(--muted); font-size: 12px; }
+aside { width: 440px; max-width: 45vw; border-left: 1px solid var(--line); background: var(--panel); overflow: auto; padding: 16px 18px 40px; }
+aside h2 { font-size: 18px; margin: 4px 0 6px; line-height: 1.3; }
+aside a { color: var(--accent); text-decoration: none; }
+aside a:hover { text-decoration: underline; }
+aside h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 20px 0 6px; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; color: var(--muted); font-size: 12px; }
+.chip { font-size: 11px; padding: 1px 7px; border-radius: 9px; font-weight: 600; }
+.chip.module { background: var(--module-soft); color: var(--module); }
+.chip.item { background: var(--item-soft); color: var(--item); }
+.chip.section { background: var(--section-soft); color: var(--section); }
+.sig { background: var(--code-bg); border-radius: 6px; padding: 6px 8px; margin: 10px 0 0; white-space: pre-wrap; word-break: break-word; }
+.doc { margin-top: 10px; }
+.doc p { margin: 0 0 10px; }
+.doc pre { background: var(--code-bg); padding: 8px 10px; border-radius: 6px; overflow: auto; }
+.doc code { background: var(--code-bg); padding: 0 3px; border-radius: 3px; }
+.doc pre code { background: none; padding: 0; }
+.doc ul, .doc ol { padding-left: 20px; margin: 0 0 10px; }
+.doc h4 { margin: 14px 0 6px; font-size: 14px; }
+.list { display: flex; flex-direction: column; gap: 4px; }
+.list button { text-align: left; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 6px; padding: 6px 9px; cursor: pointer; font: inherit; }
+.list button:hover { border-color: var(--accent); }
+.list button b { font-weight: 600; }
+.list button small { display: block; color: var(--muted); font-size: 12px; }
+.list .names { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: var(--muted); }
+details.code summary { cursor: pointer; color: var(--accent); margin-top: 18px; }
+.src { background: var(--code-bg); border-radius: 6px; overflow: auto; margin-top: 8px; max-height: 70vh; }
+.src table { border-collapse: collapse; }
+.src td { padding: 0 8px; white-space: pre; vertical-align: top; }
+.src td.n { color: var(--faint); text-align: right; user-select: none; border-right: 1px solid var(--line); }
+.src .kw { color: var(--kw); font-weight: 600; }
+.src .st { color: var(--str); }
+.src .co { color: var(--com); font-style: italic; }
+.src .tag { color: var(--section); font-weight: 700; font-style: normal; }
+.legend { position: sticky; left: 12px; bottom: 10px; display: inline-flex; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; color: var(--muted); margin: 12px; z-index: 5; flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.legend svg { overflow: visible; }
+.issues { color: var(--warn); font-size: 12.5px; }
+.issues li { margin-bottom: 4px; }
+footer { font-size: 11.5px; color: var(--faint); padding: 4px 16px; border-top: 1px solid var(--line); background: var(--panel); }
+@media (max-width: 860px) {
+  main { flex-direction: column; }
+  aside { width: auto; max-width: none; border-left: 0; border-top: 1px solid var(--line); max-height: 50vh; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title"></h1>
+  <nav class="crumbs" id="crumbs"></nav>
+  <span class="badge" id="stats"></span>
+  <button class="badge warn" id="issues" hidden></button>
+  <div class="search">
+    <input id="q" type="search" placeholder="Find a block…" autocomplete="off" aria-label="Find a block">
+    <div class="results" id="results"></div>
+  </div>
+</header>
+<main>
+  <div id="stage">
+    <div id="canvas"><svg id="edges"></svg></div>
+    <div class="legend" id="legend"></div>
+  </div>
+  <aside id="panel"></aside>
+</main>
+<footer id="foot"></footer>
+<div id="tip"></div>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(() => {
+'use strict';
+const D = JSON.parse(document.getElementById('data').textContent);
+const B = D.blocks;
+const NW = 248, NH = 96, CW = 210, CH = 58, GX = 36, GY = 64;
+
+// ---- model -------------------------------------------------------------
+B.forEach((b, i) => { b.i = i; b.children = []; b.out = []; b.inn = []; });
+B.forEach(b => { if (b.parent != null) B[b.parent].children.push(b.i); });
+B.forEach(b => b.children.sort((x, y) => (B[x].order - B[y].order) || (B[x].lines[0] - B[y].lines[0])));
+D.edges.forEach(e => { B[e.from].out.push(e); B[e.to].inn.push(e); });
+const roots = B.filter(b => b.parent == null).map(b => b.i);
+let ROOT = roots[0];
+if (roots.length > 1) {
+  ROOT = B.length;
+  B.push({ i: ROOT, id: '', parent: null, kind: 'module', title: D.title, doc: D.intro || '', file: null, lines: [0, 0], children: roots, out: [], inn: [], defines: [], order: 0 });
+  roots.forEach(r => { B[r].parent = ROOT; });
+}
+const byId = new Map(B.map(b => [b.id, b.i]));
+const ancestors = i => { const a = []; let p = B[i].parent; while (p != null) { a.push(p); p = B[p].parent; } return a; };
+const within = (x, f) => { while (x != null) { if (x === f) return true; x = B[x].parent; } return false; };
+const childOf = (x, f) => { while (x != null && B[x].parent !== f) x = B[x].parent; return x; };
+const summary = b => (b.doc || '').split(/\n\s*\n/)[0].replace(/\n/g, ' ');
+const firstSentence = b => {
+  const s = stripMd(summary(b));
+  // The first sentence: up to a full stop that ends a word of two or more
+  // letters (not "e.g." or a decimal), else the whole paragraph.
+  const m = s.match(/^(.+?[^.\s][a-z)`'"\]]\.)(\s|$)/);
+  return m ? m[1] : s;
+};
+const stripMd = s => s.replace(/\{@link(?:code|plain)?\s+([^}\s]+)(?:\s+([^}]*))?\}/g, (_, t, label) => label || t).replace(/\[`?([^\]`]+)`?\]\([^)]*\)/g, '$1').replace(/\[`([^`]+)`\]/g, '$1').replace(/`([^`]+)`/g, '$1').replace(/\*\*?([^*]+)\*\*?/g, '$1');
+const count = i => { let n = 0; for (const c of B[i].children) n += 1 + count(c); return n; };
+const kindLabel = b => b.kind === 'item' ? (b.item || 'item') : b.kind;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const nLines = b => b.lines[1] - b.lines[0] + 1;
+// Lines of code a block holds: its own span plus the files of the modules it
+// groups (a module's code is in its own file).
+const size = i => {
+  const b = B[i];
+  let n = b.file != null ? nLines(b) : 0;
+  for (const c of b.children) if (B[c].file == null || B[c].file !== b.file) n += size(c);
+  return n;
+};
+const fmtLines = n => n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k lines' : n + ' lines';
+
+// ---- markdown (the subset rustdoc comments use) ------------------------
+function inline(s) {
+  // JSDoc links: `{@link LiveView.windowS}`, `{@link X text}`.
+  s = s.replace(/\{@link(?:code|plain)?\s+([^}\s]+)(?:\s+([^}]*))?\}/g, (_, t, label) => (label ? label : '`' + t + '`'));
+  s = esc(s);
+  const codes = [];
+  s = s.replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return '\u0000' + (codes.length - 1) + '\u0000'; });
+  s = s.replace(/\[(\u0000\d+\u0000)\](\([^)]*\))?/g, '$1');
+  s = s.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/(^|[^*\w])\*([^*\s][^*]*)\*/g, '$1<i>$2</i>');
+  return s.replace(/\u0000(\d+)\u0000/g, (_, k) => '<code>' + codes[+k] + '</code>');
+}
+function markdown(src) {
+  const lines = (src || '').split('\n');
+  let html = '', para = [], list = null, i = 0;
+  const flush = () => {
+    if (para.length) { html += '<p>' + inline(para.join(' ')) + '</p>'; para = []; }
+    if (list) { html += '<' + list.tag + '>' + list.items.map(x => '<li>' + inline(x) + '</li>').join('') + '</' + list.tag + '>'; list = null; }
+  };
+  while (i < lines.length) {
+    const l = lines[i];
+    const t = l.trim();
+    if (t.startsWith('```')) {
+      flush();
+      const body = [];
+      i++;
+      while (i < lines.length && !lines[i].trim().startsWith('```')) body.push(lines[i++]);
+      html += '<pre><code>' + esc(body.join('\n')) + '</code></pre>';
+      i++;
+      continue;
+    }
+    const h = t.match(/^#{1,6}\s+(.*)$/);
+    const li = t.match(/^([-*]|\d+[.)])\s+(.*)$/);
+    if (!t) { flush(); }
+    else if (h) { flush(); html += '<h4>' + inline(h[1]) + '</h4>'; }
+    else if (li) {
+      const tag = /\d/.test(li[1]) ? 'ol' : 'ul';
+      if (para.length) { html += '<p>' + inline(para.join(' ')) + '</p>'; para = []; }
+      if (!list || list.tag !== tag) { if (list) flush(); list = { tag, items: [] }; }
+      list.items.push(li[2]);
+    }
+    else if (list && /^\s+/.test(l)) { list.items[list.items.length - 1] += ' ' + t; }
+    else { if (list) flush(); para.push(t); }
+    i++;
+  }
+  flush();
+  return html;
+}
+
+// ---- source highlighting -----------------------------------------------
+const KW = new Set('as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while'.split(' '));
+function highlight(line) {
+  let out = '', i = 0;
+  while (i < line.length) {
+    const r = line.slice(i);
+    let m;
+    if ((m = r.match(/^\/\/.*/))) {
+      const c = esc(m[0]).replace(/(@block|@end)\b/g, '<span class="tag">$1</span>');
+      out += '<span class="co">' + c + '</span>'; break;
+    }
+    if ((m = r.match(/^"(\\.|[^"\\])*"?/))) { out += '<span class="st">' + esc(m[0]) + '</span>'; i += m[0].length; continue; }
+    if ((m = r.match(/^[A-Za-z_][A-Za-z0-9_]*/))) { out += KW.has(m[0]) ? '<span class="kw">' + m[0] + '</span>' : esc(m[0]); i += m[0].length; continue; }
+    out += esc(line[i]); i++;
+  }
+  return out;
+}
+function sourceTable(b) {
+  const f = D.files[b.file];
+  if (!f) return '';
+  const lines = f.text.split('\n').slice(b.lines[0] - 1, b.lines[1]);
+  return '<table>' + lines.map((l, k) => '<tr><td class="n">' + (b.lines[0] + k) + '</td><td>' + highlight(l) + '</td></tr>').join('') + '</table>';
+}
+
+// ---- view state --------------------------------------------------------
+let focus = ROOT, selected = ROOT, started = false;
+const $ = id => document.getElementById(id);
+const canvas = $('canvas'), svg = $('edges'), tip = $('tip');
+
+function go(target, select, push = true) {
+  let f = target;
+  if (!B[f].children.length && B[f].parent != null) f = B[f].parent;
+  const changed = f !== focus;
+  focus = f; selected = select != null ? select : target;
+  if (push) {
+    const h = '#' + encodeURIComponent(B[selected].id);
+    if (location.hash !== h) history.pushState(null, '', h);
+  }
+  if (changed && started) { canvas.classList.add('fading'); setTimeout(() => { render(); canvas.classList.remove('fading'); }, 120); }
+  else render();
+}
+window.addEventListener('popstate', fromHash);
+function fromHash() {
+  const id = decodeURIComponent(location.hash.slice(1));
+  const i = byId.has(id) ? byId.get(id) : ROOT;
+  go(i, i, false);
+}
+
+// ---- layout ------------------------------------------------------------
+function graph(f) {
+  const kids = B[f].children;
+  // The focus's own code (outside its sub-blocks) takes part as one more
+  // box when it uses a sub-block or a sub-block uses it.
+  const idx = new Map([...kids, f].map((k, n) => [k, n]));
+  const inner = new Map(), ctx = new Map();
+  const add = (map, key, val) => { const e = map.get(key) || { count: 0, names: new Set(), ...val }; return map.set(key, e).get(key); };
+  const rep = x => (x === f ? f : childOf(x, f));
+  for (const e of D.edges) {
+    const a = within(e.from, f) ? rep(e.from) : null;
+    const b = within(e.to, f) ? rep(e.to) : null;
+    if (a == null && b == null) continue;
+    if ((a === f && b == null) || (b === f && a == null)) continue; // listed beside it
+    if (a != null && b != null) {
+      if (a === b || !idx.has(a) || !idx.has(b)) continue;
+      const x = add(inner, a + '>' + b, { from: a, to: b });
+      x.count += e.count; e.names.forEach(n => x.names.add(n));
+    } else {
+      const inside = a != null ? a : b, outside = a != null ? e.to : e.from;
+      if (!idx.has(inside)) continue;
+      // The outside block at the level where it meets this one.
+      const anc = ancestors(f).concat([f]);
+      let o = outside;
+      if (anc.includes(o)) { /* own code of an enclosing block */ }
+      else { while (B[o].parent != null && !anc.includes(B[o].parent)) o = B[o].parent; }
+      const dir = a != null ? 'out' : 'in';
+      const x = add(ctx, dir + o, { dir, ctx: o, inside: new Map() });
+      x.count += e.count;
+      const y = x.inside.get(inside) || { count: 0, names: new Set() };
+      y.count += e.count; e.names.forEach(n => y.names.add(n)); x.inside.set(inside, y);
+      e.names.forEach(n => x.names.add(n));
+    }
+  }
+  const innerList = [...inner.values()];
+  const own = innerList.some(e => e.from === f || e.to === f);
+  return { kids: own ? [...kids, f] : kids, inner: innerList, ctx: [...ctx.values()] };
+}
+
+function layout(f, width) {
+  const g = graph(f);
+  const kids = g.kids;
+  const sequential = kids.length > 1 && kids.every(k => B[k].kind === 'section');
+  const rank = new Map();
+  if (sequential) kids.forEach((k, n) => rank.set(k, n));
+  else {
+    // Callers above what they use. Mutual uses are broken where they are
+    // weakest: an order by the greedy heuristic of Eades, Lin and Smyth
+    // (sinks last, sources first, else the block that uses most and is used
+    // least, weighted by how often), and only edges going forward in it
+    // set the layers.
+    const live = new Set(kids);
+    const left = [], right = [];
+    const weight = (k, dir) => g.inner.reduce((s, e) => s + ((dir === 'out' ? e.from : e.to) === k && live.has(dir === 'out' ? e.to : e.from) ? e.count : 0), 0);
+    while (live.size) {
+      let moved = true;
+      while (moved) {
+        moved = false;
+        for (const k of [...live]) {
+          if (weight(k, 'out') === 0) { right.unshift(k); live.delete(k); moved = true; }
+          else if (weight(k, 'in') === 0) { left.push(k); live.delete(k); moved = true; }
+        }
+      }
+      if (!live.size) break;
+      let best = null, bestD = -Infinity;
+      for (const k of live) {
+        const d = weight(k, 'out') - weight(k, 'in');
+        if (d > bestD || (d === bestD && B[k].order < B[best].order)) { best = k; bestD = d; }
+      }
+      left.push(best); live.delete(best);
+    }
+    const seq = [...left, ...right];
+    const at = new Map(seq.map((k, n) => [k, n]));
+    const keep = g.inner.filter(e => at.get(e.from) < at.get(e.to));
+    const memo = new Map();
+    const depthOf = k => { // longest path from any source to k
+      if (memo.has(k)) return memo.get(k);
+      memo.set(k, 0);
+      let d = 0;
+      for (const e of keep) if (e.to === k) d = Math.max(d, depthOf(e.from) + 1);
+      memo.set(k, d); return d;
+    };
+    kids.forEach(k => rank.set(k, depthOf(k)));
+    // Blocks without any edge go last, together.
+    const linked = new Set(g.inner.flatMap(e => [e.from, e.to]));
+    const loose = kids.filter(k => !linked.has(k));
+    if (loose.length && loose.length < kids.length) {
+      const maxR = Math.max(...kids.filter(k => linked.has(k)).map(k => rank.get(k)));
+      loose.forEach(k => rank.set(k, maxR + 1));
+    }
+  }
+  if (sequential && width >= NW + CW + 150) {
+    // Steps in a column; what they use or what uses them beside them, each
+    // level with the first step it touches.
+    const pos = new Map();
+    const SG = 34;
+    kids.forEach((k, n) => pos.set('n' + k, { x: 20, y: 30 + n * (NH + SG), w: NW, h: NH, kind: 'main', item: k }));
+    const first = c => Math.min(...[...c.inside.keys()].map(k => kids.indexOf(k)));
+    const side = [...g.ctx].sort((a, b) => first(a) - first(b) || b.count - a.count);
+    const cx = 20 + NW + 110;
+    let next = 30;
+    side.forEach(c => {
+      const ys = [...c.inside.keys()].map(k => pos.get('n' + k).y + NH / 2);
+      const want = ys.reduce((a, b) => a + b, 0) / ys.length - CH / 2;
+      const y = Math.max(next, want);
+      pos.set(c.dir + c.ctx, { x: cx, y, w: CW, h: CH, kind: c.dir, item: c });
+      next = y + CH + 12;
+    });
+    const height = Math.max(30 + kids.length * (NH + SG), next) + 10;
+    return { g, pos, width: Math.max(width - 40, cx + CW + 40), height, sequential, side: true, bands: side.length ? [{ y: 8, x: cx, text: 'Uses and used by' }] : [] };
+  }
+  const cols = Math.max(1, Math.floor((width - 40 + GX) / (NW + GX)));
+  const rows = [];
+  const byRank = new Map();
+  kids.forEach(k => { const r = rank.get(k); if (!byRank.has(r)) byRank.set(r, []); byRank.get(r).push(k); });
+  const xOf = new Map();
+  [...byRank.keys()].sort((a, b) => a - b).forEach(r => {
+    let row = byRank.get(r);
+    // Barycentre of the blocks above that use these.
+    row = row.map(k => {
+      const ups = g.inner.filter(e => e.to === k && xOf.has(e.from)).map(e => xOf.get(e.from));
+      return { k, w: ups.length ? ups.reduce((a, b) => a + b, 0) / ups.length : 1e9 + B[k].order };
+    }).sort((a, b) => a.w - b.w).map(x => x.k);
+    for (let s = 0; s < row.length; s += cols) {
+      const chunk = row.slice(s, s + cols);
+      rows.push({ kind: 'main', items: chunk });
+      chunk.forEach((k, n) => xOf.set(k, n));
+    }
+  });
+  const ctxIn = g.ctx.filter(c => c.dir === 'in'), ctxOut = g.ctx.filter(c => c.dir === 'out');
+  const ccols = Math.max(1, Math.floor((width - 40 + GX) / (CW + GX)));
+  const chunks = (list, kind) => {
+    list.sort((a, b) => b.count - a.count || B[a.ctx].order - B[b.ctx].order);
+    const out = [];
+    for (let s = 0; s < list.length; s += ccols) out.push({ kind, items: list.slice(s, s + ccols) });
+    return out;
+  };
+  const all = [...chunks(ctxIn, 'in'), ...rows, ...chunks(ctxOut, 'out')];
+  // Positions.
+  const pos = new Map();
+  let y = 30;
+  let maxW = 0;
+  all.forEach(row => {
+    const w = row.kind === 'main' ? NW : CW, h = row.kind === 'main' ? NH : CH;
+    maxW = Math.max(maxW, row.items.length * (w + GX) - GX);
+  });
+  const W = Math.max(width - 40, maxW);
+  const bands = [];
+  let lastKind = null;
+  all.forEach(row => {
+    const w = row.kind === 'main' ? NW : CW, h = row.kind === 'main' ? NH : CH;
+    if (row.kind !== lastKind && row.kind !== 'main') { bands.push({ y, text: row.kind === 'in' ? 'Used by (outside this block)' : 'Uses (outside this block)' }); y += 20; }
+    if (row.kind === 'main' && lastKind === 'in') y += 10;
+    lastKind = row.kind;
+    const rowW = row.items.length * (w + GX) - GX;
+    let x = 20 + (W - rowW) / 2;
+    row.items.forEach(it => {
+      const key = row.kind === 'main' ? 'n' + it : row.kind + it.ctx;
+      pos.set(key, { x, y, w, h, kind: row.kind, item: it });
+      x += w + GX;
+    });
+    y += h + (row.kind === 'main' ? GY : 22);
+  });
+  return { g, pos, width: W + 40, height: y + 10, sequential, bands };
+}
+
+// ---- rendering ---------------------------------------------------------
+function render() {
+  tip.style.display = 'none';
+  const stage = $('stage');
+  const L = layout(focus, stage.clientWidth || 1000);
+  canvas.querySelectorAll('.node, .band, .empty').forEach(n => n.remove());
+  svg.innerHTML = '<defs>' + ['edge', 'hot', 'seq'].map(k => `<marker id="m-${k}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--${k === 'seq' ? 'faint' : k})"/></marker>`).join('') + '</defs>';
+  canvas.style.width = L.width + 'px';
+  canvas.style.height = L.height + 'px';
+  svg.setAttribute('width', L.width); svg.setAttribute('height', L.height);
+  if (!B[focus].children.length) {
+    const d = document.createElement('div'); d.className = 'empty';
+    d.innerHTML = 'This block has no sub-blocks. Its documentation and code are on the right.';
+    canvas.appendChild(d);
+  }
+  L.bands.forEach(b => { const d = document.createElement('div'); d.className = 'band'; d.style.top = (b.y) + 'px'; if (b.x != null) { d.style.left = b.x + 'px'; d.style.paddingLeft = '0'; } d.textContent = b.text; canvas.appendChild(d); });
+  const nodeEls = new Map();
+  for (const [key, p] of L.pos) {
+    const d = document.createElement('div');
+    if (p.kind === 'main' && p.item === focus) {
+      // The focus's own code, outside its sub-blocks.
+      const b = B[focus];
+      const ownLines = nLines(b) - b.children.filter(c => B[c].file === b.file).reduce((s, c) => s + nLines(B[c]), 0);
+      d.className = 'node ctx own ' + b.kind;
+      d.innerHTML = `<div class="t">Other code of ${esc(b.title)}</div><div class="s">${esc(b.defines.length ? b.defines.slice(0, 6).join(', ') + (b.defines.length > 6 ? ', …' : '') : 'Code outside its sub-blocks')}</div>`
+        + `<div class="f"><span>outside the sub-blocks</span><span>· ${fmtLines(Math.max(ownLines, 0))}</span></div>`;
+      d.onclick = ev => { ev.stopPropagation(); go(focus, focus); };
+      d.onmouseenter = ev => hover(key, L, ev, b);
+    } else if (p.kind === 'main') {
+      const b = B[p.item];
+      const n = count(b.i);
+      d.className = 'node ' + b.kind + (selected === b.i ? ' selected' : '');
+      const stepNo = L.sequential ? `<span class="step">${B[focus].children.indexOf(b.i) + 1}</span>` : '';
+      d.innerHTML = `${stepNo}<div class="t">${esc(b.title)}</div><div class="s">${esc(firstSentence(b))}</div>`
+        + `<div class="f"><span>${esc(kindLabel(b))}</span><span>· ${fmtLines(size(b.i))}</span>${n ? `<span class="open">${n} sub-block${n > 1 ? 's' : ''} ▸</span>` : ''}</div>`;
+      d.onclick = ev => { ev.stopPropagation(); b.children.length ? go(b.i) : go(b.i, b.i); };
+      d.onmouseenter = ev => hover(key, L, ev, b);
+    } else {
+      const b = B[p.item.ctx];
+      const where = b.parent != null && B[b.parent].id ? B[b.parent].title : '';
+      const own = within(focus, b.i) && b.i !== focus ? ' (own code)' : (b.i === focus ? ' (own code)' : '');
+      d.className = 'node ctx ' + b.kind;
+      d.innerHTML = `<div class="t">${esc(b.title + own)}</div><div class="s">${esc(where ? 'in ' + where : kindLabel(b))}</div>`;
+      d.onclick = ev => { ev.stopPropagation(); go(b.i, b.i); };
+      d.onmouseenter = ev => hover(key, L, ev, b, p.item);
+    }
+    d.onmousemove = moveTip;
+    d.onmouseleave = unhover;
+    d.style.left = p.x + 'px'; d.style.top = p.y + 'px'; d.style.width = p.w + 'px'; d.style.height = p.h + 'px';
+    canvas.appendChild(d);
+    nodeEls.set(key, d);
+  }
+  // Edges.
+  const paths = [];
+  const anchor = (p, side, k, n) => {
+    const off = n > 1 ? (k - (n - 1) / 2) * Math.min(18, (p.w - 40) / n) : 0;
+    if (side === 'bottom') return [p.x + p.w / 2 + off, p.y + p.h];
+    if (side === 'top') return [p.x + p.w / 2 + off, p.y];
+    if (side === 'right') return [p.x + p.w, p.y + p.h / 2 + off / 3];
+    return [p.x, p.y + p.h / 2 + off / 3];
+  };
+  const curve = (a, b) => {
+    const [x1, y1] = a, [x2, y2] = b;
+    if (y2 > y1 + 4) { const m = Math.max(24, (y2 - y1) / 2); return `M${x1},${y1} C${x1},${y1 + m} ${x2},${y2 - m} ${x2},${y2}`; }
+    return null;
+  };
+  const sideLoop = (p, q) => {
+    const a = [p.x + p.w, p.y + p.h / 2], b = [q.x + q.w, q.y + q.h / 2];
+    const bulge = 40 + Math.abs(a[1] - b[1]) * 0.15;
+    if (Math.abs(p.y - q.y) < 2) { // same row: arc over the top
+      const s = [p.x + p.w / 2, p.y], t = [q.x + q.w / 2, q.y];
+      return `M${s[0]},${s[1]} C${s[0]},${s[1] - 50} ${t[0]},${t[1] - 50} ${t[0]},${t[1]}`;
+    }
+    return `M${a[0]},${a[1]} C${a[0] + bulge},${a[1]} ${b[0] + bulge},${b[1]} ${b[0]},${b[1]}`;
+  };
+  if (L.sequential) {
+    const kids = B[focus].children;
+    for (let n = 0; n + 1 < kids.length; n++) {
+      const p = L.pos.get('n' + kids[n]), q = L.pos.get('n' + kids[n + 1]);
+      const d = (Math.abs(p.x - q.x) < 2) ? `M${p.x + p.w / 2},${p.y + p.h} L${q.x + q.w / 2},${q.y - 2}` : (curve([p.x + p.w / 2, p.y + p.h], [q.x + q.w / 2, q.y]) || sideLoop(p, q));
+      paths.push({ d, cls: 'seq', marker: 'seq', keys: ['n' + kids[n], 'n' + kids[n + 1]], title: 'then' });
+    }
+  }
+  L.g.inner.forEach(e => {
+    const p = L.pos.get('n' + e.from), q = L.pos.get('n' + e.to);
+    const d = curve(anchor(p, 'bottom', 0, 1), anchor(q, 'top', 0, 1)) || sideLoop(p, q);
+    paths.push({ d, cls: '', marker: 'edge', keys: ['n' + e.from, 'n' + e.to], w: e.count, title: `${B[e.from].title} uses ${B[e.to].title}`, names: [...e.names] });
+  });
+  L.g.ctx.forEach(c => {
+    const cp = L.pos.get(c.dir + c.ctx);
+    for (const [inside, x] of c.inside) {
+      const p = L.pos.get('n' + inside);
+      const [from, to] = c.dir === 'in' ? [cp, p] : [p, cp];
+      const d = L.side ? (c.dir === 'in' ? `M${cp.x},${cp.y + cp.h / 2} C${cp.x - 70},${cp.y + cp.h / 2} ${p.x + p.w + 70},${p.y + p.h / 2} ${p.x + p.w},${p.y + p.h / 2}` : `M${p.x + p.w},${p.y + p.h / 2} C${p.x + p.w + 70},${p.y + p.h / 2} ${cp.x - 70},${cp.y + cp.h / 2} ${cp.x},${cp.y + cp.h / 2}`) : (curve([from.x + from.w / 2, from.y + from.h], [to.x + to.w / 2, to.y]) || sideLoop(from, to));
+      paths.push({ d, cls: 'ctx', marker: 'edge', keys: [c.dir + c.ctx, 'n' + inside], w: x.count, title: c.dir === 'in' ? `${B[c.ctx].title} uses ${B[inside].title}` : `${B[inside].title} uses ${B[c.ctx].title}`, names: [...x.names] });
+    }
+  });
+  L.paths = paths;
+  svg.insertAdjacentHTML('beforeend', paths.map((p, n) => {
+    const w = p.cls === 'seq' ? 2 : Math.min(3.2, 1 + Math.log2(1 + (p.w || 1)) * 0.45);
+    return `<path class="e ${p.cls}" data-n="${n}" d="${p.d}" stroke-width="${w}" marker-end="url(#m-${p.marker})"/><path class="hit" data-n="${n}" d="${p.d}"/>`;
+  }).join(''));
+  svg.querySelectorAll('path.hit').forEach(el => {
+    const p = paths[+el.dataset.n];
+    el.onmouseenter = ev => {
+      tip.innerHTML = `<b>${esc(p.title)}</b>` + (p.names && p.names.length ? `<div class="names mono">${esc(p.names.slice(0, 12).join(', '))}${p.names.length > 12 ? ' …' : ''}</div>` : '');
+      tip.style.display = 'block'; moveTip(ev);
+      svg.querySelector(`path.e[data-n="${el.dataset.n}"]`).classList.add('hot');
+    };
+    el.onmousemove = moveTip;
+    el.onmouseleave = () => { tip.style.display = 'none'; svg.querySelectorAll('path.e.hot').forEach(x => x.classList.remove('hot')); };
+  });
+  render.L = L; render.nodeEls = nodeEls;
+  crumbs(); panel(selected); legend(L);
+}
+
+function hover(key, L, ev, b, ctx) {
+  const n = count(b.i);
+  let names = '';
+  if (ctx) {
+    const all = new Set(); ctx.inside.forEach(x => x.names.forEach(v => all.add(v)));
+    names = `<div class="names mono">${esc([...all].slice(0, 10).join(', '))}</div>`;
+  }
+  tip.innerHTML = `<b>${esc(b.title)}</b> <span class="chip ${b.kind}">${esc(kindLabel(b))}</span><div class="doc">${markdown(summary(b))}</div>${names}`
+    + `<div class="hint">${ctx ? 'Click to go there' : n ? 'Click to open its ' + n + ' sub-block' + (n > 1 ? 's' : '') : 'Click for the documentation and code'}</div>`;
+  tip.style.display = 'block'; moveTip(ev);
+  L.paths.forEach((p, i) => {
+    const on = p.keys.includes(key);
+    const el = svg.querySelector(`path.e[data-n="${i}"]`);
+    el.classList.toggle('hot', on); el.classList.toggle('dim', !on);
+  });
+  const linked = new Set([key]);
+  L.paths.forEach(p => { if (p.keys.includes(key)) p.keys.forEach(k => linked.add(k)); });
+  render.nodeEls.forEach((el, k) => el.classList.toggle('dim', !linked.has(k)));
+}
+function unhover() {
+  tip.style.display = 'none';
+  svg.querySelectorAll('path.e').forEach(el => el.classList.remove('hot', 'dim'));
+  render.nodeEls.forEach(el => el.classList.remove('dim'));
+}
+function moveTip(ev) {
+  const pad = 14, r = tip.getBoundingClientRect();
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - pad;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - pad;
+  tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, y) + 'px';
+}
+
+function crumbs() {
+  const chain = ancestors(focus).reverse().concat([focus]).filter(i => B[i].id !== '' || i === ROOT);
+  $('crumbs').innerHTML = chain.map((i, n) => (n ? '<span class="sep">›</span>' : '') + `<button data-i="${i}" class="${i === focus ? 'here' : ''}">${esc(B[i].title)}</button>`).join('');
+  $('crumbs').querySelectorAll('button').forEach(el => { el.onclick = () => go(+el.dataset.i, +el.dataset.i); });
+}
+
+function legend(L) {
+  $('legend').innerHTML = [
+    '<span><i style="background:var(--module)"></i>module</span>',
+    '<span><i style="background:var(--item)"></i>item (fn, type, impl)</span>',
+    '<span><i style="background:var(--section)"></i>section of code</span>',
+    '<span><svg width="26" height="8"><path d="M0,4 L22,4" stroke="var(--edge)" stroke-width="1.6"/><path d="M18,0 L26,4 L18,8z" fill="var(--edge)"/></svg>uses</span>',
+    L.sequential ? '<span><svg width="26" height="8"><path d="M0,4 L22,4" stroke="var(--faint)" stroke-width="2"/><path d="M18,0 L26,4 L18,8z" fill="var(--faint)"/></svg>then</span>' : '',
+  ].join('');
+}
+
+// The uses of a block's subtree that leave it, grouped by the block they reach.
+function links(i, dir) {
+  const groups = new Map();
+  for (const e of D.edges) {
+    const a = dir === 'out' ? e.from : e.to, b = dir === 'out' ? e.to : e.from;
+    if (!within(a, i) || within(b, i)) continue;
+    const g = groups.get(b) || { b, names: new Set(), count: 0 };
+    e.names.forEach(n => g.names.add(n)); g.count += e.count; groups.set(b, g);
+  }
+  return [...groups.values()].sort((x, y) => y.count - x.count);
+}
+
+function panel(i) {
+  const b = B[i];
+  const f = b.file != null ? D.files[b.file] : null;
+  const loc = f ? (D.source_url ? `<a href="${esc(D.source_url + f.path)}#L${b.lines[0]}-L${b.lines[1]}" target="_blank" rel="noopener" class="mono">${esc(f.path)}:${b.lines[0]}–${b.lines[1]}</a>` : `<span class="mono">${esc(f.path)}:${b.lines[0]}–${b.lines[1]}</span>`) : '';
+  let h = '';
+  const anc = ancestors(i).reverse().filter(a => B[a].id !== '');
+  if (anc.length) h += `<div class="meta">${anc.map(a => `<a href="#${encodeURIComponent(B[a].id)}" data-go="${a}">${esc(B[a].title)}</a>`).join(' › ')}</div>`;
+  h += `<h2>${esc(b.title)}</h2>`;
+  if (b.id) h += `<div class="meta"><span class="chip ${b.kind}">${esc(kindLabel(b))}</span><span class="mono">${esc(b.id)}</span>${loc ? '<span>' + loc + '</span>' : ''}</div>`;
+  if (b.signature) h += `<pre class="sig mono">${esc(b.signature)}</pre>`;
+  h += `<div class="doc">${markdown(b.doc) || '<p><i>No documentation.</i></p>'}</div>`;
+  if (b.children.length) {
+    h += `<h3>Sub-blocks</h3><div class="list">` + b.children.map(c => `<button data-go="${c}"><b>${esc(B[c].title)}</b> <span class="chip ${B[c].kind}">${esc(kindLabel(B[c]))}</span><small>${esc(firstSentence(B[c]))}</small></button>`).join('') + '</div>';
+  }
+  const linkList = (title, list) => list.length ? `<h3>${title}</h3><div class="list">` + list.slice(0, 40).map(g => `<button data-go="${g.b}"><b>${esc(B[g.b].title)}</b> <small class="names">${esc([...g.names].slice(0, 8).join(', '))}${g.names.size > 8 ? ' …' : ''}</small></button>`).join('') + '</div>' : '';
+  h += linkList('Uses', links(i, 'out'));
+  h += linkList('Used by', links(i, 'in'));
+  if (b.defines && b.defines.length) h += `<h3>Defines</h3><div class="mono" style="color:var(--muted);word-break:break-word">${esc(b.defines.join(', '))}</div>`;
+  if (f) h += `<details class="code"><summary>Code (${nLines(b)} lines)</summary><div class="src mono" id="src"></div></details>`;
+  if (i === ROOT && D.issues.length) h += issuesHtml();
+  const p = $('panel');
+  p.innerHTML = h;
+  p.scrollTop = 0;
+  p.querySelectorAll('[data-go]').forEach(el => { el.onclick = ev => { ev.preventDefault(); const t = +el.dataset.go; go(t, t); }; });
+  const det = p.querySelector('details.code');
+  if (det) det.addEventListener('toggle', () => { if (det.open && !$('src').innerHTML) $('src').innerHTML = sourceTable(b); });
+  render.nodeEls && render.nodeEls.forEach((el, k) => el.classList.toggle('selected', k === 'n' + i));
+}
+function issuesHtml() {
+  return `<h3>Annotation issues</h3><ul class="issues">${D.issues.map(x => `<li class="mono">${esc(x.file)}:${x.line}: ${esc(x.message)}</li>`).join('')}</ul>`;
+}
+
+// ---- search ------------------------------------------------------------
+const q = $('q'), results = $('results');
+let hits = [], active = 0;
+q.oninput = () => {
+  const s = q.value.trim().toLowerCase();
+  if (!s) { results.classList.remove('open'); return; }
+  const words = s.split(/\s+/);
+  hits = B.filter(b => b.id !== '').map(b => {
+    const t = b.title.toLowerCase(), id = b.id.toLowerCase(), doc = (b.doc || '').toLowerCase();
+    let score = 0;
+    for (const w of words) {
+      if (t.includes(w)) score += t.startsWith(w) ? 6 : 4;
+      else if (id.includes(w)) score += 3;
+      else if (doc.includes(w)) score += 1;
+      else return null;
+    }
+    return { b, score };
+  }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 14).map(x => x.b);
+  active = 0; showHits();
+};
+function showHits() {
+  results.innerHTML = hits.length ? hits.map((b, n) => `<button class="${n === active ? 'active' : ''}" data-i="${b.i}"><b>${esc(b.title)}</b> <span class="chip ${b.kind}">${esc(kindLabel(b))}</span><small class="mono">${esc(b.id)}</small><small>${esc(firstSentence(b))}</small></button>`).join('') : '<button disabled>No block matches.</button>';
+  results.classList.add('open');
+  results.querySelectorAll('button[data-i]').forEach(el => { el.onmousedown = ev => { ev.preventDefault(); pick(+el.dataset.i); }; });
+}
+function pick(i) { results.classList.remove('open'); q.value = ''; q.blur(); go(i, i); }
+q.onkeydown = ev => {
+  if (ev.key === 'ArrowDown') { active = Math.min(hits.length - 1, active + 1); showHits(); ev.preventDefault(); }
+  else if (ev.key === 'ArrowUp') { active = Math.max(0, active - 1); showHits(); ev.preventDefault(); }
+  else if (ev.key === 'Enter' && hits[active]) pick(hits[active].i);
+  else if (ev.key === 'Escape') { results.classList.remove('open'); q.blur(); }
+};
+q.onblur = () => setTimeout(() => results.classList.remove('open'), 100);
+document.addEventListener('keydown', ev => {
+  if (ev.target === q) return;
+  if (ev.key === '/') { q.focus(); ev.preventDefault(); }
+  else if ((ev.key === 'Escape' || ev.key === 'Backspace') && B[focus].parent != null) { const p = B[focus].parent; go(p, focus); }
+});
+$('stage').addEventListener('click', ev => { if (ev.target.closest('.node')) return; selected = focus; panel(focus); });
+let resizeT; addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(render, 120); });
+
+// ---- start -------------------------------------------------------------
+$('title').textContent = D.title;
+const files = D.files.length, blocks = B.filter(b => b.id !== '').length;
+$('stats').textContent = `${blocks} blocks · ${files} files`;
+if (D.issues.length) {
+  const el = $('issues'); el.hidden = false;
+  el.textContent = `${D.issues.length} annotation issue${D.issues.length > 1 ? 's' : ''}`;
+  el.onclick = () => go(ROOT, ROOT);
+}
+$('foot').textContent = `Generated by ${D.generator} from the @block annotations in the code${D.generated_from ? ' (' + D.generated_from + ')' : ''}. Hover a block for its summary, click to open it; Esc goes up, / searches.`;
+fromHash();
+started = true;
+})();
+</script>
+</body>
+</html>

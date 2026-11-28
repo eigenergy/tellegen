@@ -34,6 +34,8 @@
 //! A unit whose own block is singular (an algebraic state that only the
 //! network determines) cannot be eliminated first: [`BlockLu::new`] then
 //! returns `None` and the caller takes the sparse LU of the whole matrix.
+//!
+//! @block Block factorization
 
 use faer::sparse::Triplet;
 
@@ -56,6 +58,7 @@ struct Unit {
 }
 
 /// The factorization of one step matrix by blocks.
+// @block Factorization by blocks
 pub(super) struct BlockLu {
     /// Buses.
     n: usize,
@@ -286,6 +289,7 @@ impl BlockLu {
     /// `z_k = D_k⁻¹ r_k` in place of each unit's right-hand side, and the
     /// network's right-hand side `r_v − Σ B_k z_k` (with the frame speed's
     /// row) into `rhs`.
+    // @block Eliminate the units
     fn eliminate(&mut self, x: &mut [f64]) {
         let n = self.n;
         let n2 = 2 * n;
@@ -325,6 +329,7 @@ impl BlockLu {
 
     /// The network's solution from `rhs` into `x`, and
     /// `y_k = z_k − D_k⁻¹ [C_k  E_k] (v_bus, w)`.
+    // @block Back-substitute the units
     fn substitute(&self, x: &mut [f64]) {
         let n = self.n;
         let n2 = 2 * n;
@@ -436,6 +441,7 @@ impl FactorsRef<'_> {
 /// pivoting: the unit lower factor below the diagonal, the upper factor
 /// with reciprocal pivots on it; `perm[i]` is the row that ends in place
 /// `i`. `false` when a pivot vanishes against the matrix's largest entry.
+// @block Dense LU of one unit
 fn factor(a: &mut [f64], k: usize, perm: &mut [u32]) -> bool {
     for (i, p) in perm.iter_mut().enumerate() {
         *p = i as u32;

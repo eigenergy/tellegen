@@ -1,4 +1,7 @@
 <script lang="ts" module>
+	/** A canvas line chart of one quantity for the timeline's traces: series,
+	 * a band, reference lines, a playhead to seek with, hover, pick and drag to zoom.
+	 * @block Trace chart */
 	export interface TraceSeries {
 		key: string;
 		label: string;
@@ -18,7 +21,7 @@
 
 <script lang="ts">
 	import { minSpanFor, tickLabel, ticks, yDomain } from '../../dynamics/axis.js';
-	import { m4 } from '../../dynamics/decimate.js';
+	import { m4 } from '../../charts/decimate.js';
 	import { sampleAt } from '../../dynamics/series.js';
 
 	let {

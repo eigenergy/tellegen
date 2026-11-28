@@ -2,6 +2,8 @@
 //! sessions that advance on demand and take events as they run, replay from
 //! checkpoints, results packed as flat buffers, and small-signal analysis of
 //! a stored module.
+//!
+//! @block Live sessions
 
 use std::collections::BTreeMap;
 
@@ -39,6 +41,9 @@ fn pack_series(channels: &mut BTreeMap<String, Vec<f64>>) -> (Vec<String>, Vec<u
     (keys, lengths, values)
 }
 
+/// Pack a result or chunk as JSON metadata plus flat `f64` buffers, so the
+/// browser reads the samples without parsing them.
+// @block Flat buffers
 fn pack<T: Serialize>(
     mut value: T,
     channels: impl FnOnce(
@@ -107,6 +112,7 @@ fn pack<T: Serialize>(
 ///
 /// # Errors
 /// When the result does not serialize.
+// @block Pack results as buffers
 pub fn pack_result(result: RmsResult) -> Result<RmsBuffers, String> {
     pack(result, |r| {
         let cps = std::mem::take(&mut r.checkpoints);
@@ -232,6 +238,7 @@ pub struct RmsChunk {
 
 /// A running simulation that advances on demand and takes events at its
 /// current time: the engine of the live view.
+// @block Live session
 pub struct RmsLive {
     sys: DynSystem,
     x: Vec<f64>,
@@ -252,10 +259,14 @@ pub struct RmsLive {
     /// `(admittance, source voltage)` of the voltage sources at the
     /// operating point, to bring a tripped one back.
     base_sources: Vec<(C64, C64)>,
+    /// The COI, separation and bus frequencies at each sample, as a batch
+    /// run's screening derives them.
+    derive: screen::LiveDerive,
 }
 
 impl RmsSimulation {
     /// Start a live session at the initial operating point.
+    // @block Start a live session
     #[must_use]
     pub fn live(&self, dt: f64, output_step: f64) -> RmsLive {
         let mut f = vec![0.0; self.sys.nx];
@@ -269,6 +280,9 @@ impl RmsSimulation {
         let output_step = output_step.max(dt);
         let substeps = substeps(output_step, dt);
         let mut rec = Recorder::new(&self.sys, None);
+        let mut derive = screen::LiveDerive::new(&self.sys);
+        rec.with_derived(derive.keys().to_vec());
+        rec.set_derived(derive.sample(&self.sys, 0.0, &self.x0));
         rec.record(&self.sys, 0.0, &self.x0);
         RmsLive {
             sys: self.sys.clone(),
@@ -286,6 +300,7 @@ impl RmsSimulation {
             base_loads: self.sys.loads.clone(),
             load_scales: vec![(1.0, 1.0); self.sys.loads.len()],
             base_sources: self.sys.sources.iter().map(|s| (s.y, s.e)).collect(),
+            derive,
         }
     }
 }
@@ -347,6 +362,7 @@ impl RmsLive {
     /// # Errors
     /// When the event names a missing element or the network cannot be
     /// re-solved.
+    // @block Take an event while running
     pub fn apply(&mut self, mut event: RmsEvent) -> Result<String, String> {
         let now = self.t;
         match &mut event {
@@ -379,6 +395,7 @@ impl RmsLive {
         self.sys = sys;
         self.x = x;
         self.f = f;
+        self.derive.topology_changed(&self.sys, now);
         self.applied.push(text.clone());
         self.log.push(event);
         Ok(text)
@@ -398,6 +415,7 @@ impl RmsLive {
     /// # Errors
     /// When the unit is in service or does not exist, or the network cannot
     /// be re-solved.
+    // @block Synchronize a unit
     pub fn synchronize_unit(
         &mut self,
         unit: usize,
@@ -479,6 +497,7 @@ impl RmsLive {
         self.sys = sys;
         self.x = x;
         self.f = f;
+        self.derive.topology_changed(&self.sys, self.t);
         let line = format!("t = {:.4} s: {text}", self.t);
         self.applied.push(line.clone());
         Ok(line)
@@ -531,6 +550,10 @@ impl RmsLive {
         }
         self.resolve_network(sys)
     }
+
+    // @block Read the present state
+    // What the live view shows between steps: loads, unit powers, the
+    // frequency, unit speeds, references, breakers, faults and taps.
 
     /// Operating point load per bus (dense), system per unit at `v0`.
     #[must_use]
@@ -624,6 +647,11 @@ impl RmsLive {
             None
         }
     }
+
+    // @block Change setpoints
+    // Operator actions on a running session (unit and voltage references,
+    // breakers' state, taps) with the reads that go with them; a change
+    // re-solves the network.
 
     /// Set active power references (see [`RmsLive::unit_reference`]); held
     /// inverters keep their power factor. One re-solve when an inverter
@@ -732,6 +760,7 @@ impl RmsLive {
     ///
     /// # Errors
     /// When the integration fails; the session stays at the last good point.
+    // @block Advance
     pub fn advance(&mut self, duration: f64) -> Result<RmsChunk, String> {
         self.integrate(duration)?;
         let (time, channels, frames) = self.rec.take();
@@ -787,11 +816,16 @@ impl RmsLive {
     }
 
     /// Integrate `duration` seconds, recording on the way.
+    // @block Integrate a stretch
     fn integrate(&mut self, duration: f64) -> Result<(), String> {
         let end = self.t + duration.max(0.0);
         let mut euler = 0usize;
         while self.t < end - 1e-12 {
-            let h = self.h.min(self.output_step - self.since_output).max(1e-9);
+            let h = self
+                .h
+                .min(self.output_step - self.since_output)
+                .max(1e-9)
+                .min(end - self.t);
             step_adaptive(
                 &self.sys,
                 &mut self.x,
@@ -807,6 +841,8 @@ impl RmsLive {
             if self.since_output >= self.output_step - 1e-12 {
                 self.since_output = 0.0;
                 self.t = (self.t / self.output_step).round() * self.output_step;
+                self.rec
+                    .set_derived(self.derive.sample(&self.sys, self.t, &self.x));
                 self.rec.record(&self.sys, self.t, &self.x);
             }
         }

@@ -16,6 +16,8 @@
 //! component writes the right-hand side of `M ẋ = f(x)`, and `M` holds the
 //! time constants that PowerSimulationsDynamics.jl keeps in its mass matrix,
 //! so a zero time constant turns the state algebraic.
+//!
+//! @block Synchronous generator models
 
 use std::f64::consts::PI;
 
@@ -24,6 +26,10 @@ use powerio::DynamicModel;
 use super::blocks::*;
 #[cfg(feature = "rms-experimental")]
 use super::graph::CompiledGraph;
+
+// @block Frames and saturation
+// Rotations between the network's `r/i` frame and a machine's `d/q`
+// frame, and the saturation curves of the machines.
 
 /// `√(a² + b²)`: the magnitude of per-unit phasors and flux linkages in the
 /// equations evaluated in every Newton iteration. Plain arithmetic instead
@@ -150,6 +156,10 @@ pub(crate) struct SalientPole {
     pub exponential: bool,
 }
 
+/// The machine models: classical, round rotor (`GENROU`, `GENROE`) and
+/// salient pole (`GENSAL`, `GENSAE`), with their stator algebra and
+/// rotor flux dynamics.
+// @block Machines
 #[derive(Clone, Debug)]
 pub(crate) enum Machine {
     /// `GENCLS`: constant `e'q` behind `R + j X'd`, no states.
@@ -357,6 +367,7 @@ impl SalientPole {
 }
 
 /// Single-mass shaft: states `[δ, ω]`.
+// @block Shaft
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Shaft {
     pub h: f64,
@@ -374,6 +385,7 @@ impl Shaft {
 }
 
 /// Exciters. `Fixed` holds `Vf = V_ref`.
+// @block Exciters
 #[derive(Clone, Debug)]
 pub(crate) enum Avr {
     Fixed,
@@ -820,6 +832,7 @@ pub(crate) fn breach(
 }
 
 /// Turbine-governors. `Fixed` holds `τm = P_ref`.
+// @block Governors
 #[derive(Clone, Debug)]
 pub(crate) enum Governor {
     Fixed,
@@ -1056,6 +1069,7 @@ impl Governor {
 }
 
 /// Stabilizers.
+// @block Stabilizers
 #[derive(Clone, Debug)]
 pub(crate) enum Stabilizer {
     None,

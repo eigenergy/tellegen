@@ -1,4 +1,8 @@
 <script lang="ts">
+	/** The traces of a run under the timeline, one tab per quantity
+	 * (frequency, rotor angles, voltages, loads), with bands of all units, the
+	 * pinned ones drawn on top, zoom, and a table view.
+	 * @block Traces */
 	import type { RmsRun } from '@tellegen/engine';
 	import { getAppState, getController } from '../../context.svelte.js';
 	import type { DynEvent } from '../../dynamics/events.js';
@@ -271,7 +275,7 @@
 	const tableSeries = $derived(chart.series.filter((s) => (s.alpha ?? 1) > 0.3).slice(0, 6));
 </script>
 
-<div class="traces" data-testid="dyn-traces">
+<div class="traces dyn-form" data-testid="dyn-traces">
 	<div class="bar">
 		<div
 			role="tablist"

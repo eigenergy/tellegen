@@ -46,6 +46,8 @@ pub fn output_schema() -> serde_json::Value {
 
 #[cfg(feature = "rms")]
 pub mod rms;
+#[cfg(feature = "rms-experimental")]
+mod rms_tools;
 #[cfg(feature = "synth")]
 mod synth;
 

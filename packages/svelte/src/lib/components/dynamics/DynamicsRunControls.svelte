@@ -1,4 +1,7 @@
 <script lang="ts">
+	/** The options of a run (duration, step, load model and the advanced
+	 * choices) and the button that runs it and brings the verdict into view.
+	 * @block Run options */
 	import type { RmsLoadModel as LoadModel } from '@tellegen/engine';
 	import { tick } from 'svelte';
 	import { getController } from '../../context.svelte.js';

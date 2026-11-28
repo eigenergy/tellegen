@@ -2350,6 +2350,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "tellegen-blocks"
+version = "0.1.0"
+
+[[package]]
 name = "tellegen-cli"
 version = "0.1.1"
 dependencies = [
@@ -2384,6 +2388,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tellegen",
+ "tellegen-blocks",
  "tokio",
  "tokio-stream",
  "tower",

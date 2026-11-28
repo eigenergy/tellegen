@@ -2,7 +2,8 @@
  * unit speed halos, and the events (a faulted bus while the fault is on,
  * tripped branches from their trip). A frame writes into preallocated typed
  * arrays and builds three light layer objects; the static layers are not
- * touched. */
+ * touched.
+ * @block Map layers of playback */
 
 import type { Layer } from '@deck.gl/core';
 import type { NetworkBranch, NetworkBus, RmsRun } from '@tellegen/engine';
@@ -170,6 +171,11 @@ export interface FrameSummary {
 	coiHz: number | null;
 }
 
+/** Live samples and completed runs supply the same inputs to the RMS map. */
+export interface MapSamples extends Pick<RmsRun, 'time' | 'series' | 'keys'> {
+	meta: Pick<RmsRun['meta'], 'base_frequency' | 'generators'>;
+}
+
 export class DynamicsFrame {
 	readonly n: number;
 	readonly busIds: number[];
@@ -191,7 +197,7 @@ export class DynamicsFrame {
 	readonly haloDf: Float64Array;
 
 	constructor(
-		readonly run: RmsRun,
+		readonly run: MapSamples,
 		buses: readonly NetworkBus[],
 		branches: readonly NetworkBranch[],
 		heldUnits: readonly string[],
@@ -351,6 +357,12 @@ export class DynamicsFrame {
 				lineWidthUnits: 'pixels',
 				getLineWidth: 2,
 				pickable: true,
+				// A ring sits over its bus: a click on it is a click on the bus.
+				onClick: (info: { index: number }) => {
+					if (info.index < 0) return false;
+					onBusClick?.(this.halos[info.index].bus);
+					return true;
+				},
 				updateTriggers: { getRadius: frame, getLineColor: frame }
 			}) as unknown as Layer
 		);
